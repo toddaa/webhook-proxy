@@ -10,12 +10,15 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/bergwerk/webhook-proxy/config"
 	"github.com/bergwerk/webhook-proxy/logger"
 	"github.com/bergwerk/webhook-proxy/verify"
 )
+
+const maxBodySize = 10 * 1024 * 1024 // 10 MB
 
 // routeEntry holds a parsed route with its reverse proxy and optional verifier.
 type routeEntry struct {
@@ -104,24 +107,24 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		// Read body for potential signature verification
-		bodyBytes, err := io.ReadAll(r.Body)
-		if err != nil {
-			writeJSONError(w, "failed to read request body", http.StatusInternalServerError)
-			return
-		}
-		r.Body = io.NopCloser(bytes.NewReader(bodyBytes))
-
 		// Signature verification (informational only, always proxy)
 		var sigResult *bool
 		if entry.verifier != nil {
+			// Buffer body for signature verification, then restore for proxying
+			bodyBytes, err := io.ReadAll(io.LimitReader(r.Body, maxBodySize))
+			if err != nil {
+				writeJSONError(w, "failed to read request body", http.StatusInternalServerError)
+				return
+			}
+			r.Body = io.NopCloser(bytes.NewReader(bodyBytes))
+
 			valid, verifyErr := entry.verifier.Verify(bodyBytes, r.Header)
 			if verifyErr != nil {
 				h.logger.Log(map[string]any{
-					"event":           "signature_verification_error",
-					"path":            r.URL.Path,
-					"route":           entry.route.Path,
-					"error":           verifyErr.Error(),
+					"event": "signature_verification_error",
+					"path":  r.URL.Path,
+					"route": entry.route.Path,
+					"error": verifyErr.Error(),
 				})
 				v := false
 				sigResult = &v
@@ -136,8 +139,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
-		entry.proxy.ServeHTTP(w, r)
-		h.logRequest(r, entry.route.Path, 0, time.Since(start), sigResult)
+		// Capture response status code for logging
+		rec := &statusRecorder{ResponseWriter: w}
+		entry.proxy.ServeHTTP(rec, r)
+		h.logRequest(r, entry.route.Path, rec.status, time.Since(start), sigResult)
 		return
 	}
 
@@ -166,50 +171,67 @@ func makeDirector(target *url.URL, routePath string) func(*http.Request) {
 	}
 }
 
+// statusRecorder wraps http.ResponseWriter to capture the status code.
+type statusRecorder struct {
+	http.ResponseWriter
+	status int
+}
+
+func (sr *statusRecorder) WriteHeader(code int) {
+	sr.status = code
+	sr.ResponseWriter.WriteHeader(code)
+}
+
 // handleHealthCheck responds with a JSON health status including target checks.
 func (h *Handler) handleHealthCheck(w http.ResponseWriter, r *http.Request) {
 	client := &http.Client{Timeout: 5 * time.Second}
 
 	type targetStatus struct {
-		Status         string  `json:"status"`
-		ResponseTimeMs *int64  `json:"response_time_ms,omitempty"`
-		Error          string  `json:"error,omitempty"`
+		Status         string `json:"status"`
+		ResponseTimeMs *int64 `json:"response_time_ms,omitempty"`
+		Error          string `json:"error,omitempty"`
 	}
 
-	targets := make(map[string]targetStatus)
-	routeCount := 0
-
+	// Collect non-health-check entries
+	var probeEntries []routeEntry
 	for _, entry := range h.entries {
-		if entry.route.HealthCheck {
-			continue
-		}
-		routeCount++
-
-		start := time.Now()
-		resp, err := client.Get(entry.route.Target)
-		elapsed := time.Since(start).Milliseconds()
-
-		if err != nil {
-			targets[entry.route.Path] = targetStatus{
-				Status: "down",
-				Error:  err.Error(),
-			}
-			continue
-		}
-		resp.Body.Close()
-
-		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
-			targets[entry.route.Path] = targetStatus{
-				Status:         "up",
-				ResponseTimeMs: &elapsed,
-			}
-		} else {
-			targets[entry.route.Path] = targetStatus{
-				Status: "down",
-				Error:  fmt.Sprintf("HTTP %d", resp.StatusCode),
-			}
+		if !entry.route.HealthCheck {
+			probeEntries = append(probeEntries, entry)
 		}
 	}
+
+	// Probe targets concurrently
+	results := make(map[string]targetStatus)
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+
+	for _, entry := range probeEntries {
+		wg.Add(1)
+		go func(e routeEntry) {
+			defer wg.Done()
+
+			start := time.Now()
+			resp, err := client.Get(e.route.Target)
+			elapsed := time.Since(start).Milliseconds()
+
+			var ts targetStatus
+			if err != nil {
+				ts = targetStatus{Status: "down", Error: err.Error()}
+			} else {
+				resp.Body.Close()
+				if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+					ts = targetStatus{Status: "up", ResponseTimeMs: &elapsed}
+				} else {
+					ts = targetStatus{Status: "down", Error: fmt.Sprintf("HTTP %d", resp.StatusCode)}
+				}
+			}
+
+			mu.Lock()
+			results[e.route.Path] = ts
+			mu.Unlock()
+		}(entry)
+	}
+	wg.Wait()
 
 	uptime := time.Since(h.startTime).String()
 
@@ -217,9 +239,9 @@ func (h *Handler) handleHealthCheck(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]any{
 		"status":  "ok",
-		"routes":  routeCount,
+		"routes":  len(probeEntries),
 		"uptime":  uptime,
-		"targets": targets,
+		"targets": results,
 	})
 }
 
