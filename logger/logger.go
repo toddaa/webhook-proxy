@@ -26,16 +26,19 @@ func NewStdout() *Logger {
 }
 
 // Log writes a single JSON log entry. It automatically adds a "timestamp"
-// field with the current time in RFC3339 format. The fields map is merged
-// into the output — any key called "timestamp" in fields will be overwritten.
+// field with the current time in RFC3339 format.
 func (l *Logger) Log(fields map[string]any) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
-	// Add timestamp
-	fields["timestamp"] = time.Now().UTC().Format(time.RFC3339)
+	// Copy fields to avoid mutating the caller's map
+	entry := make(map[string]any, len(fields)+1)
+	for k, v := range fields {
+		entry[k] = v
+	}
+	entry["timestamp"] = time.Now().UTC().Format(time.RFC3339)
 
-	data, err := json.Marshal(fields)
+	data, err := json.Marshal(entry)
 	if err != nil {
 		// Fallback: log the error itself
 		fallback, _ := json.Marshal(map[string]any{
