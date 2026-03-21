@@ -122,6 +122,50 @@ routes:
 	}
 }
 
+func TestValidationEmptyRoutes(t *testing.T) {
+	yaml := `
+server:
+  port: 8080
+routes: []
+`
+	path := writeTempFile(t, yaml)
+	_, err := Load(path)
+	if err == nil {
+		t.Fatal("expected error for empty routes")
+	}
+}
+
+func TestValidationPathMissingLeadingSlash(t *testing.T) {
+	yaml := `
+routes:
+  - path: github
+    target: http://localhost:8080
+    description: "missing slash"
+`
+	path := writeTempFile(t, yaml)
+	_, err := Load(path)
+	if err == nil {
+		t.Fatal("expected error for path without leading slash")
+	}
+}
+
+func TestValidationMissingSecretEnv(t *testing.T) {
+	yaml := `
+routes:
+  - path: /test
+    target: http://localhost:8080
+    description: "test"
+    verify_signature:
+      type: github
+      secret_env: ""
+`
+	path := writeTempFile(t, yaml)
+	_, err := Load(path)
+	if err == nil {
+		t.Fatal("expected error for missing secret_env")
+	}
+}
+
 func writeTempFile(t *testing.T, content string) string {
 	t.Helper()
 	dir := t.TempDir()

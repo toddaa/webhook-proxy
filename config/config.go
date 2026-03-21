@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -74,8 +75,16 @@ func applyDefaults(cfg *Config) {
 
 // validate checks the config for logical errors.
 func validate(cfg *Config) error {
+	if len(cfg.Routes) == 0 {
+		return fmt.Errorf("at least one route is required")
+	}
+
 	seen := make(map[string]bool)
 	for _, r := range cfg.Routes {
+		if !strings.HasPrefix(r.Path, "/") {
+			return fmt.Errorf("route path must start with /: %s", r.Path)
+		}
+
 		if seen[r.Path] {
 			return fmt.Errorf("duplicate route path: %s", r.Path)
 		}
@@ -88,6 +97,9 @@ func validate(cfg *Config) error {
 		if r.VerifySignature != nil {
 			if !knownVerifierTypes[r.VerifySignature.Type] {
 				return fmt.Errorf("route %s: unknown signature verification type: %s", r.Path, r.VerifySignature.Type)
+			}
+			if r.VerifySignature.SecretEnv == "" {
+				return fmt.Errorf("route %s: secret_env is required when verify_signature is configured", r.Path)
 			}
 		}
 	}
