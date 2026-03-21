@@ -10,6 +10,8 @@ import (
 )
 
 // StripeVerifier verifies Stripe webhook signatures using HMAC-SHA256.
+// TODO: Add timestamp tolerance check (e.g., 300s) to prevent replay attacks
+// when verification becomes a gatekeeper (rejecting invalid requests).
 type StripeVerifier struct {
 	secret []byte
 }
