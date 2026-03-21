@@ -1,0 +1,27 @@
+server:
+  port: 8080
+  request_timeout: 30s
+
+routes:
+  - path: /github
+    target: http://192.168.1.50:5678/webhook/github
+    description: "GitHub webhooks → n8n"
+    verify_signature:
+      type: github
+      secret_env: GITHUB_WEBHOOK_SECRET
+
+  - path: /eas
+    target: http://192.168.1.50:5678/webhook/eas
+    description: "Expo EAS Build webhooks → n8n"
+
+  - path: /stripe
+    target: http://192.168.1.60:3000/api/hooks/stripe
+    description: "Stripe webhooks → billing service"
+    verify_signature:
+      type: stripe
+      secret_env: STRIPE_WEBHOOK_SECRET
+
+  - path: /health
+    target: ""
+    description: "Health check endpoint"
+    health_check: true
