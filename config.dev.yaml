@@ -1,0 +1,27 @@
+server:
+  port: 8080
+  request_timeout: 30s
+
+routes:
+  - path: /github
+    target: http://echo-server:80/webhook/github
+    description: "GitHub webhooks → echo server"
+    verify_signature:
+      type: github
+      secret_env: GITHUB_WEBHOOK_SECRET
+
+  - path: /eas
+    target: http://echo-server:80/webhook/eas
+    description: "EAS webhooks → echo server"
+
+  - path: /stripe
+    target: http://echo-server:80/webhook/stripe
+    description: "Stripe webhooks → echo server"
+    verify_signature:
+      type: stripe
+      secret_env: STRIPE_WEBHOOK_SECRET
+
+  - path: /health
+    target: ""
+    description: "Health check endpoint"
+    health_check: true

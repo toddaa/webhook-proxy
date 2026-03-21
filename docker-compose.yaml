@@ -1,0 +1,22 @@
+version: "3.8"
+
+services:
+  webhook-proxy:
+    build: .
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./config.dev.yaml:/app/config.yaml:ro
+    environment:
+      - CONFIG_PATH=/app/config.yaml
+      - GITHUB_WEBHOOK_SECRET=dev-secret
+      - STRIPE_WEBHOOK_SECRET=whsec_dev_secret
+    depends_on:
+      - echo-server
+
+  echo-server:
+    image: ealen/echo-server:latest
+    ports:
+      - "3000:80"
+    environment:
+      - PORT=80
