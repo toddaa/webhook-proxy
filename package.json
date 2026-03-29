@@ -1,0 +1,25 @@
+{
+  "name": "webhook-proxy",
+  "version": "1.0.0",
+  "description": "A webhook reverse proxy that receives incoming webhook HTTP requests, optionally verifies their signatures, and forwards them to configured backend targets.",
+  "main": "dist/main.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/main.js",
+    "dev": "tsx src/main.ts",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "keywords": [],
+  "license": "UNLICENSED",
+  "devDependencies": {
+    "@types/http-proxy": "^1.17.15",
+    "@types/node": "^22.0.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  },
+  "dependencies": {
+    "http-proxy": "^1.18.1",
+    "yaml": "^2.7.0"
+  }
+}
