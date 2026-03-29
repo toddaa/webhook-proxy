@@ -21,6 +21,10 @@ routes:
       type: stripe
       secret_env: STRIPE_WEBHOOK_SECRET
 
+  - path: /wled
+    target: http://10.255.3.20
+    description: "WLED webhooks → lighting service"
+
   - path: /health
     target: ""
     description: "Health check endpoint"
