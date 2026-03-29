@@ -1,17 +1,19 @@
-# Stage 1: Build the Go binary
-FROM golang:1-alpine AS builder
+# Stage 1: Build the TypeScript project
+FROM node:22-alpine AS builder
 WORKDIR /app
-COPY go.mod go.sum ./
-RUN go mod download
-COPY . .
-RUN CGO_ENABLED=0 GOOS=linux go build -o webhook-proxy .
+COPY package.json package-lock.json* ./
+RUN npm ci
+COPY tsconfig.json ./
+COPY src/ ./src/
+RUN npm run build
 
-# Stage 2: Minimal runtime image
-FROM alpine:latest
-RUN apk --no-cache add ca-certificates
+# Stage 2: Production image with only runtime dependencies
+FROM node:22-alpine
 RUN adduser -D -u 1000 appuser
 WORKDIR /app
-COPY --from=builder /app/webhook-proxy .
+COPY package.json package-lock.json* ./
+RUN npm ci --omit=dev
+COPY --from=builder /app/dist ./dist
 USER appuser
 EXPOSE 8080
-ENTRYPOINT ["./webhook-proxy"]
+ENTRYPOINT ["node", "dist/main.js"]

@@ -1,5 +1,8 @@
-# Binary
-webhook-proxy
+# Dependencies
+node_modules/
+
+# Build output
+dist/
 
 # IDE
 .idea/
@@ -8,3 +11,6 @@ webhook-proxy
 
 # OS
 .DS_Store
+
+# Environment
+.env
